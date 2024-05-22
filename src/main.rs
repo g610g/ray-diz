@@ -1,11 +1,11 @@
 use bytes::Bytes;
 use dashmap::DashMap;
 use mini_redis::{Connection, Frame};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::sleep;
-type shardedDb = Arc<Mutex<DashMap<String, Bytes>>>;
+type shardedDb = Arc<DashMap<String, Bytes>>;
 async fn _foo(_: String) {}
 async fn bar() -> String {
     log::info!("Sleeping");
@@ -15,7 +15,7 @@ async fn bar() -> String {
     String::from("Hello World")
 }
 fn new_sharded_db(shared_num: usize) -> shardedDb {
-    Arc::new(Mutex::new(DashMap::new()))
+    Arc::new(DashMap::with_capacity(shared_num))
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -37,12 +37,10 @@ async fn process(socket: TcpStream, db: shardedDb) {
     while let Some(frame) = connection.read_frame().await.unwrap() {
         let response = match Command::from_frame(frame).unwrap() {
             Set(cmd) => {
-                let db = db.lock().unwrap();
                 db.insert(cmd.key().to_string(), cmd.value().clone());
                 Frame::Simple("Ok".to_string())
             }
             Get(cmd) => {
-                let db = db.lock().unwrap();
                 let x = if let Some(value) = db.get(cmd.key()) {
                     Frame::Bulk(value.clone())
                 } else {
