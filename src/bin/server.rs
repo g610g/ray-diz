@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use dashmap::DashMap;
-use mini_redis::{Connection, Frame};
+use mini_redis::{Connection, Frame, Result};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
