@@ -24,38 +24,52 @@ async fn two_second() {
     sleep(Duration::from_millis(2000)).await;
     println!("two second sleep is done");
 }
+async fn wait_and_print() {
+    sleep(Duration::from_millis(2500)).await;
+    println!("I am done waiting for 2 and half second");
+}
 async fn test_concurrency(tx: Sender<String>) {
-    // let mut tasks_send = vec![];
-    for _ in 0..32 {
-        let tx2 = tx.clone();
-        let handle = tokio::spawn(async move {
-            two_second().await;
-            tx2.send("Two Seconds".to_string()).await;
-        })
-        .await;
-    }
-    // for task in tasks_send {
-    //     task.await;
-    // }
-}
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    // let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
-    let db = new_sharded_db(5);
-    let (tx, mut rx) = mpsc::channel(32);
-    let t1 = tokio::spawn(async {
-        test_concurrency(tx).await;
-    });
-    while let Some(str) = rx.recv().await {
-        println!("{str}");
-    }
-    //     let (socket, _) = listener.accept().await.unwrap();
-    //     let db = db.clone();
-    //     println!("Accepted");
-    //     tokio::spawn(async move { process(socket, db).await });
-    // }
-}
+    let mut tasks_send = vec![];
 
+    let tx2 = tx.clone();
+
+    let handle2 = tokio::spawn(async move {
+        tx.send("Five Seconds".to_string()).await;
+        five_second().await;
+    });
+    let handle3 = tokio::spawn(async move { wait_and_print().await });
+    let handle = tokio::spawn(async move {
+        tx2.send("Two Seconds".to_string()).await;
+        two_second().await;
+    });
+
+    tasks_send.push(handle);
+    tasks_send.push(handle2);
+    tasks_send.push(handle3);
+
+    for task in tasks_send {
+        task.await;
+    }
+}
+#[tokio::main()]
+async fn main() {
+    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+    let db = new_sharded_db(5);
+    // let (tx, mut rx) = mpsc::channel(32);
+    // let t1 = tokio::spawn(async {
+    //     test_concurrency(tx).await;
+    // });
+    // while let Some(str) = rx.recv().await {
+    //     println!("{str}");
+
+    // }
+    loop {
+        let (socket, _) = listener.accept().await.unwrap();
+        let db = db.clone();
+        println!("Accepted");
+        tokio::spawn(async move { process(socket, db).await });
+    }
+}
 async fn process(socket: TcpStream, db: ShardedDb) {
     use mini_redis::Command::{self, Get, Set};
 
