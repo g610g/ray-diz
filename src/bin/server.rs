@@ -4,6 +4,7 @@ use mini_redis::{Connection, Frame};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::{self, Sender};
 use tokio::time::sleep;
 
 type ShardedDb = Arc<DashMap<String, Bytes>>;
@@ -23,17 +24,36 @@ async fn two_second() {
     sleep(Duration::from_millis(2000)).await;
     println!("two second sleep is done");
 }
+async fn test_concurrency(tx: Sender<String>) {
+    // let mut tasks_send = vec![];
+    for _ in 0..32 {
+        let tx2 = tx.clone();
+        let handle = tokio::spawn(async move {
+            two_second().await;
+            tx2.send("Two Seconds".to_string()).await;
+        })
+        .await;
+    }
+    // for task in tasks_send {
+    //     task.await;
+    // }
+}
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+    // let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
     let db = new_sharded_db(5);
-
-    loop {
-        let (socket, _) = listener.accept().await.unwrap();
-        let db = db.clone();
-        println!("Accepted");
-        tokio::spawn(async move { process(socket, db).await });
+    let (tx, mut rx) = mpsc::channel(32);
+    let t1 = tokio::spawn(async {
+        test_concurrency(tx).await;
+    });
+    while let Some(str) = rx.recv().await {
+        println!("{str}");
     }
+    //     let (socket, _) = listener.accept().await.unwrap();
+    //     let db = db.clone();
+    //     println!("Accepted");
+    //     tokio::spawn(async move { process(socket, db).await });
+    // }
 }
 
 async fn process(socket: TcpStream, db: ShardedDb) {
