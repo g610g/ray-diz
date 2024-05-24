@@ -62,7 +62,7 @@ impl Connection {
         self.stream.flush().await;
         Ok(())
     }
-    fn parse_frame(&self) -> Result<Option<Frame>> {
+    fn parse_frame(&mut self) -> Result<Option<Frame>> {
         let mut buf = Cursor::new(&self.buffer[..]);
         match Frame::check(&mut buf) {
             Ok(_) => {
@@ -72,9 +72,10 @@ impl Connection {
                 self.buffer.advance(len);
                 return Ok(Some(frame));
             }
-            Err(mini_redis::frame::Error::Incomplete) => Ok(None),
-            Err(e) => Err(e.into()),
+            Err(mini_redis::frame::Error::Incomplete) => {
+                return Ok(None);
+            }
+            Err(e) => return Err(e.into()),
         };
-        return Ok(None);
     }
 }
