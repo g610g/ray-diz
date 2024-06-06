@@ -1,33 +1,44 @@
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
+use tokio::sync::broadcast;
 
+fn gives_default<T>() -> T
+where
+    T: Default,
+{
+    Default::default()
+}
 #[tokio::main]
 async fn main() -> Result<(), io::Error> {
+    let value: i32 = gives_default();
     let listener = TcpListener::bind("127.0.0.1:6421").await?;
-
+    let (sender, _) = broadcast::channel(10);
     loop {
-        let (mut socket, _) = listener.accept().await?;
-
+        let sender = sender.clone();
+        let mut reciever = sender.subscribe();
+        let (mut socket, addr) = listener.accept().await?;
         tokio::spawn(async move {
-            let mut buf = vec![0; 1024];
+            let (reader, mut writer) = socket.split();
+            let mut reader = BufReader::new(reader);
+            let mut line_read = String::new();
             loop {
-                match socket.read(&mut buf).await {
-                    // Return value of `Ok(0)` signifies that the remote has
-                    // closed
-                    Ok(0) => return,
-                    Ok(n) => {
-                        // Copy the data back to socket
-                        if socket.write_all(&buf[..n]).await.is_err() {
-                            // Unexpected socket error. There isn't much we can
-                            // do here so just stop processing.
-                            return;
+                tokio::select! {
+                    result = reader.read_line(&mut line_read) => {
+                            if result.unwrap() == 0 {
+                            break;
                         }
+                            sender.send((line_read.clone(), addr)).unwrap();
+                            line_read.clear();
                     }
-                    Err(_) => {
-                        // Unexpected socket error. There isn't much we can do
-                        // here so just stop processing.
-                        return;
+                    result = reciever.recv() => {
+                        let (msg, other_addr) = result.unwrap();
+                        println!("{}", other_addr);
+                        if addr != other_addr{
+                            writer.write_all(msg.as_bytes()).await.unwrap();
+                        }
+
                     }
+
                 }
             }
         });

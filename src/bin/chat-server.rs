@@ -11,24 +11,28 @@ async fn read_write_buffer(mut socket: TcpStream, tx: Sender<String>, mut rx: Re
     let mut reader = BufReader::new(read);
     let mut line = String::new();
     loop {
-        let bytes_read = reader.read_line(&mut line).await.unwrap();
-        if bytes_read == 0 {
-            break;
+        tokio::select! {
+                res = reader.read_line(&mut line) => {
+                    let res = res.unwrap();
+                    if res == 0 {
+                        break;
+                }
+                let _ = tx.send(line.clone());
         }
-        tx.send(line.clone()).unwrap();
-        let msg = rx.recv().await.unwrap();
-        let _ = write.write_all(&msg.as_bytes()).await.unwrap();
+                res = rx.recv() => {
+                    let msg = res.unwrap();
+                let _ = write.write_all(&msg.as_bytes()).await.unwrap();
+                }
 
-        line.clear();
+            }
     }
 }
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     //binds connection
     let listener = TcpListener::bind("localhost:8000").await.unwrap();
-    let (tx, rx) = broadcast::channel::<String>(10);
-    // let mut handles = vec![];
-    //let tx_clone = tx.clone();
+    let (tx, _) = broadcast::channel::<String>(10);
     //infinitely accepts client and spawn a task for read and writing buffer
     loop {
         let tx_clone = tx.clone();
